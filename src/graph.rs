@@ -1,3 +1,4 @@
+use ark_bn254::Fr as ScalarField;
 use std::cmp::max;
 use std::collections::HashMap;
 use std::collections::{btree_map::Entry, BTreeMap, HashSet};
@@ -6,7 +7,7 @@ use thiserror::Error;
 #[derive(Clone, Debug, PartialEq, Eq, Hash, Copy)]
 pub struct InputValue {
     id: usize,
-    value: usize,
+    value: ScalarField,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash, Copy)]
@@ -42,8 +43,8 @@ pub enum GraphError {
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct Graph<'a> {
-    nodes: BTreeMap<usize, Vec<Node<'a>>>,
-    last_trace: HashMap<Node<'a>, usize>,
+    pub nodes: BTreeMap<usize, Vec<Node<'a>>>,
+    pub last_trace: HashMap<Node<'a>, ScalarField>,
 }
 
 impl<'a> Graph<'a> {
@@ -128,7 +129,7 @@ impl<'a> Graph<'a> {
         let set: HashSet<_> = values.drain(..).collect(); // dedup
         values = set.into_iter().collect();
 
-        let mut trace: HashMap<Node<'a>, usize> = HashMap::new();
+        let mut trace: HashMap<Node<'a>, ScalarField> = HashMap::new();
         for input_node in &self.nodes[&0] {
             match input_node {
                 Node::Input { id } => {
@@ -152,14 +153,14 @@ impl<'a> Graph<'a> {
                             trace.get(inputs[0]).ok_or(GraphError::TraceNodeExistence)?;
                         let second_input =
                             trace.get(inputs[1]).ok_or(GraphError::TraceNodeExistence)?;
-                        trace.insert(*op, first_input + second_input);
+                        trace.insert(*op, *first_input + *second_input);
                     }
                     Node::Mult { inputs, .. } => {
                         let first_input =
                             trace.get(inputs[0]).ok_or(GraphError::TraceNodeExistence)?;
                         let second_input =
                             trace.get(inputs[1]).ok_or(GraphError::TraceNodeExistence)?;
-                        trace.insert(*op, first_input * second_input);
+                        trace.insert(*op, *first_input * *second_input);
                     }
                     _ => {}
                 }
@@ -201,21 +202,36 @@ mod tests {
         );
 
         let res = graph.forward(vec![
-            InputValue { id: 0, value: 1 },
-            InputValue { id: 1, value: 2 },
+            InputValue {
+                id: 0,
+                value: ScalarField::from(1),
+            },
+            InputValue {
+                id: 1,
+                value: ScalarField::from(2),
+            },
         ]);
         assert!(res.is_ok());
 
-        assert_eq!(graph.last_trace[&first_input], 1);
-        assert_eq!(graph.last_trace[&second_input], 2);
-        assert_eq!(graph.last_trace[&add_node], 3);
+        assert_eq!(graph.last_trace[&first_input], ScalarField::from(1));
+        assert_eq!(graph.last_trace[&second_input], ScalarField::from(2));
+        assert_eq!(graph.last_trace[&add_node], ScalarField::from(3));
 
-        let res = graph.forward(vec![InputValue { id: 0, value: 1 }]);
+        let res = graph.forward(vec![InputValue {
+            id: 0,
+            value: ScalarField::from(1),
+        }]);
         assert_eq!(res, Err(GraphError::BadInputs));
 
         let res = graph.forward(vec![
-            InputValue { id: 0, value: 1 },
-            InputValue { id: 22, value: 2 },
+            InputValue {
+                id: 0,
+                value: ScalarField::from(1),
+            },
+            InputValue {
+                id: 22,
+                value: ScalarField::from(2),
+            },
         ]);
         assert_eq!(res, Err(GraphError::BadInputs));
     }
@@ -244,21 +260,36 @@ mod tests {
         );
 
         let res = graph.forward(vec![
-            InputValue { id: 0, value: 1 },
-            InputValue { id: 1, value: 2 },
+            InputValue {
+                id: 0,
+                value: ScalarField::from(1),
+            },
+            InputValue {
+                id: 1,
+                value: ScalarField::from(2),
+            },
         ]);
         assert!(res.is_ok());
 
-        assert_eq!(graph.last_trace[&first_input], 1);
-        assert_eq!(graph.last_trace[&second_input], 2);
-        assert_eq!(graph.last_trace[&mult_node], 2);
+        assert_eq!(graph.last_trace[&first_input], ScalarField::from(1));
+        assert_eq!(graph.last_trace[&second_input], ScalarField::from(2));
+        assert_eq!(graph.last_trace[&mult_node], ScalarField::from(2));
 
-        let res = graph.forward(vec![InputValue { id: 0, value: 1 }]);
+        let res = graph.forward(vec![InputValue {
+            id: 0,
+            value: ScalarField::from(1),
+        }]);
         assert_eq!(res, Err(GraphError::BadInputs));
 
         let res = graph.forward(vec![
-            InputValue { id: 0, value: 1 },
-            InputValue { id: 22, value: 2 },
+            InputValue {
+                id: 0,
+                value: ScalarField::from(1),
+            },
+            InputValue {
+                id: 22,
+                value: ScalarField::from(2),
+            },
         ]);
         assert_eq!(res, Err(GraphError::BadInputs));
     }

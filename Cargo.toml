@@ -15,6 +15,7 @@ serde_json = "1.0.91"
 ark-bn254 = "0.3.0"
 ark-ff = "0.3.0"
 ark-ec = "0.3.0"
+ark-poly = "0.3.0"
 
 [dev-dependencies]
 rand = { version = "0.8.4", features = ["small_rng"] }
