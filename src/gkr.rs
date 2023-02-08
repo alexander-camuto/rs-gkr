@@ -7,6 +7,8 @@ use ark_poly::MVPolynomial;
 use core::str::Chars;
 use thiserror::Error;
 
+pub type MultiPoly = SparsePolynomial<ScalarField, SparseTerm>;
+
 #[derive(Error, Debug, PartialEq)]
 pub enum GKRError {
     /// must generate trace first
@@ -37,9 +39,9 @@ fn get_k(n: usize) -> usize {
 #[derive(Debug, PartialEq, Clone)]
 pub struct Layer {
     pub k: usize,
-    pub add: SparsePolynomial<ScalarField, SparseTerm>,
-    pub mult: SparsePolynomial<ScalarField, SparseTerm>,
-    pub input: SparsePolynomial<ScalarField, SparseTerm>,
+    pub add: MultiPoly,
+    pub mult: MultiPoly,
+    pub input: MultiPoly,
     pub m: ScalarField,
     pub wire: (Vec<Vec<ScalarField>>, Vec<Vec<ScalarField>>),
 }
@@ -136,10 +138,7 @@ pub fn get_wiring_rep<'a>(graph: Graph<'a>) -> Result<Vec<Layer>, GKRError> {
     Ok(layers)
 }
 
-pub fn polynomial_from_binary(
-    inputs: Vec<Chars>,
-    evals: Vec<ScalarField>,
-) -> SparsePolynomial<ScalarField, SparseTerm> {
+pub fn polynomial_from_binary(inputs: Vec<Chars>, evals: Vec<ScalarField>) -> MultiPoly {
     let mut terms: Vec<(ScalarField, SparseTerm)> = vec![];
     let num_vars = inputs.iter().map(|c| c.clone().count()).sum();
     // let mut offset = 0;
