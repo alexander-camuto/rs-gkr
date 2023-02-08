@@ -42,7 +42,6 @@ pub struct Layer {
     pub add: MultiPoly,
     pub mult: MultiPoly,
     pub input: MultiPoly,
-    pub m: ScalarField,
     pub wire: (Vec<Vec<ScalarField>>, Vec<Vec<ScalarField>>),
 }
 
@@ -65,6 +64,10 @@ impl GKR {
 }
 
 pub fn get_wiring_rep<'a>(graph: Graph<'a>) -> Result<Vec<Layer>, GKRError> {
+    if graph.last_trace.len() == 0 {
+        return Err(GKRError::TraceNotGenerated);
+    }
+
     let mut layers = vec![];
     for (index, layer_nodes) in &graph.nodes {
         let mut layer = Layer {
@@ -72,18 +75,8 @@ pub fn get_wiring_rep<'a>(graph: Graph<'a>) -> Result<Vec<Layer>, GKRError> {
             add: SparsePolynomial::zero(),
             mult: SparsePolynomial::zero(),
             input: SparsePolynomial::zero(),
-            m: ScalarField::zero(),
             wire: (vec![], vec![]),
         };
-
-        if graph.last_trace.len() == 0 {
-            return Err(GKRError::TraceNotGenerated);
-        } else {
-            for node in layer_nodes {
-                // the layer's claimed sum over the multilinear extension is simply the sum of gate evals given an input
-                layer.m += graph.last_trace.get(&node).unwrap();
-            }
-        }
 
         if index > &0 {
             for (curr, node) in layer_nodes.iter().enumerate() {
