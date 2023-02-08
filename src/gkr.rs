@@ -5,6 +5,7 @@ use ark_ff::Zero;
 use ark_poly::polynomial::multivariate::{SparsePolynomial, SparseTerm, Term};
 use ark_poly::DenseMVPolynomial;
 use core::str::Chars;
+use std::cmp::max;
 use thiserror::Error;
 
 pub type MultiPoly = SparsePolynomial<ScalarField, SparseTerm>;
@@ -108,12 +109,12 @@ pub fn get_wiring_rep<'a>(graph: Graph<'a>) -> Result<Vec<Layer>, GKRError> {
                 }
             }
 
-            let prev_layer = layers[*index - 1];
+            let prev_layer = &layers[*index - 1];
 
-            let w_b = shift_poly_by_k(prev_layer.func, layer.k);
-            let w_c = shift_poly_by_k(prev_layer.func, layer.k + prev_layer.k);
-            layer.func = layer.add * (w_b + w_c) + layer.mult * (w_b * w_c)
-        // input layer
+            let w_b = shift_poly_by_k(prev_layer.clone().func, layer.k);
+            let w_c = shift_poly_by_k(prev_layer.clone().func, layer.k + prev_layer.k);
+            layer.func = mult_poly(layer.clone().add, w_b.clone() + w_c.clone())
+                + mult_poly(layer.clone().mult, mult_poly(w_b, w_c));
         } else {
             let mut binary_inputs = vec![];
             let mut evals = vec![];
@@ -135,6 +136,21 @@ pub fn get_wiring_rep<'a>(graph: Graph<'a>) -> Result<Vec<Layer>, GKRError> {
     }
 
     Ok(layers)
+}
+
+pub fn mult_poly(p1: MultiPoly, p2: MultiPoly) -> MultiPoly {
+    let p1_terms = p1.terms();
+    let p2_terms = p2.terms();
+    let num_vars = max(p1.num_vars(), p2.num_vars());
+    let mut mult_terms = vec![];
+    for (unit_1, term_1) in p1_terms {
+        for (unit_2, term_2) in p2_terms {
+            let mut mult_term: Vec<_> = (*term_1).to_vec();
+            mult_term.append(&mut term_2.to_vec());
+            mult_terms.push((unit_1 * unit_2, SparseTerm::new(mult_term)));
+        }
+    }
+    SparsePolynomial::from_coefficients_vec(num_vars, mult_terms)
 }
 
 pub fn shift_poly_by_k(p: MultiPoly, k: usize) -> MultiPoly {
@@ -227,6 +243,35 @@ mod tests {
             ],
         );
         assert_eq!(poly1, poly2);
+
+        // Create a multivariate polynomial in 3 variables, with 4 terms:
+        // 2*x_0^3 + x_0*x_2 +x_0*x_2   + x_1*x_2 + 5
+        let poly1 = SparsePolynomial::from_coefficients_vec(
+            3,
+            vec![
+                (ScalarField::from(2), SparseTerm::new(vec![(0, 3)])),
+                (ScalarField::from(1), SparseTerm::new(vec![(0, 1), (2, 1)])),
+                (ScalarField::from(1), SparseTerm::new(vec![(0, 1), (2, 1)])),
+                (ScalarField::from(1), SparseTerm::new(vec![(1, 1), (2, 1)])),
+                (ScalarField::from(5), SparseTerm::new(vec![])),
+            ],
+        );
+
+        // Create a multivariate polynomial in 3 variables, with 4 terms:
+        // 2*x_0^3 + 2*x_0*x_2   + x_1*x_2 + 5
+        let poly2 = SparsePolynomial::from_coefficients_vec(
+            3,
+            vec![
+                (
+                    ScalarField::from(2),
+                    SparseTerm::new(vec![(0, 1), (0, 1), (0, 1)]),
+                ),
+                (ScalarField::from(2), SparseTerm::new(vec![(0, 1), (2, 1)])),
+                (ScalarField::from(1), SparseTerm::new(vec![(1, 1), (2, 1)])),
+                (ScalarField::from(5), SparseTerm::new(vec![])),
+            ],
+        );
+        assert_eq!(poly1, poly2);
     }
 
     #[test]
@@ -244,7 +289,7 @@ mod tests {
             ],
         );
 
-        let poly2 = shift_poly_by_k(poly1, poly1.num_vars());
+        let poly2 = shift_poly_by_k(poly1, 3);
 
         assert_eq!(
             poly2,
@@ -271,7 +316,7 @@ mod tests {
                 (ScalarField::from(5), SparseTerm::new(vec![])),
             ],
         );
-        let poly2 = shift_poly_by_k(poly1, poly1.num_vars());
+        let poly2 = shift_poly_by_k(poly1, 3);
         assert_eq!(
             poly2,
             SparsePolynomial::from_coefficients_vec(
@@ -281,6 +326,43 @@ mod tests {
                     (ScalarField::from(2), SparseTerm::new(vec![(3, 1), (5, 1)])),
                     (ScalarField::from(1), SparseTerm::new(vec![(4, 1), (5, 1)])),
                     (ScalarField::from(5), SparseTerm::new(vec![])),
+                ],
+            )
+        );
+    }
+
+    #[test]
+    pub fn test_poly_mult() {
+        // Create a multivariate polynomial in 3 variables, with 4 terms:
+        // 2*x_0^3 + x_0*x_2 +x_0*x_2   + x_1*x_2 + 5
+        let poly1 = SparsePolynomial::from_coefficients_vec(
+            1,
+            vec![
+                (ScalarField::from(2), SparseTerm::new(vec![(0, 3)])),
+                (ScalarField::from(5), SparseTerm::new(vec![])),
+            ],
+        );
+
+        let poly2 = SparsePolynomial::from_coefficients_vec(
+            4,
+            vec![
+                (ScalarField::from(2), SparseTerm::new(vec![(3, 3)])),
+                (ScalarField::from(5), SparseTerm::new(vec![])),
+            ],
+        );
+
+        let mult_poly = mult_poly(poly1, poly2);
+
+        assert_eq!(mult_poly.num_vars(), 4);
+        assert_eq!(
+            mult_poly,
+            SparsePolynomial::from_coefficients_vec(
+                6,
+                vec![
+                    (ScalarField::from(10), SparseTerm::new(vec![(0, 3)])),
+                    (ScalarField::from(10), SparseTerm::new(vec![(3, 3)])),
+                    (ScalarField::from(4), SparseTerm::new(vec![(0, 3), (3, 3)])),
+                    (ScalarField::from(25), SparseTerm::new(vec![])),
                 ],
             )
         );
