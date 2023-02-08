@@ -6,8 +6,8 @@ use thiserror::Error;
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash, Copy)]
 pub struct InputValue {
-    id: usize,
-    value: ScalarField,
+    pub id: usize,
+    pub value: ScalarField,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash, Copy)]
@@ -50,8 +50,8 @@ pub struct Graph<'a> {
 impl<'a> Graph<'a> {
     pub fn new(mut nodes: Vec<&Node<'a>>) -> Result<Self, GraphError> {
         // remove duplicates
-        let set: HashSet<_> = nodes.drain(..).collect(); // dedup
-        nodes = set.into_iter().collect();
+        let mut seen = HashSet::new();
+        nodes.retain(|item| seen.insert(*item));
 
         print!("{:?}", nodes);
 
@@ -126,8 +126,8 @@ impl<'a> Graph<'a> {
     /// forward pass for a graph
     pub fn forward(&mut self, mut values: Vec<InputValue>) -> Result<(), GraphError> {
         // remove duplicates
-        let set: HashSet<_> = values.drain(..).collect(); // dedup
-        values = set.into_iter().collect();
+        let mut seen = HashSet::new();
+        values.retain(|item| seen.insert(*item));
 
         let mut trace: HashMap<Node<'a>, ScalarField> = HashMap::new();
         for input_node in &self.nodes[&0] {
