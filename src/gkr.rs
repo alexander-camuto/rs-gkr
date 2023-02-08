@@ -1,9 +1,9 @@
 use crate::graph::{Graph, GraphError, InputValue, Node};
-use crate::sumcheck::SumCheck;
+use crate::sumcheck::Prover as SumCheckProver;
 use ark_bn254::Fr as ScalarField;
 use ark_ff::Zero;
 use ark_poly::polynomial::multivariate::{SparsePolynomial, SparseTerm, Term};
-use ark_poly::MVPolynomial;
+use ark_poly::DenseMVPolynomial;
 use core::str::Chars;
 use thiserror::Error;
 
@@ -41,18 +41,18 @@ pub struct Layer {
     pub k: usize,
     pub add: MultiPoly,
     pub mult: MultiPoly,
-    pub input: MultiPoly,
+    pub func: MultiPoly,
     pub wire: (Vec<Vec<ScalarField>>, Vec<Vec<ScalarField>>),
 }
 
 // Simulates memory of a single prover instance
 #[derive(Debug, Clone)]
-pub struct GKR {
+pub struct Prover {
     pub layers: Vec<Layer>,
-    pub sumcheck_proofs: Vec<SumCheck>,
+    pub sumcheck_proofs: Vec<SumCheckProver>,
 }
 
-impl GKR {
+impl Prover {
     pub fn new<'a>(nodes: Vec<&Node<'a>>, values: Vec<InputValue>) -> Result<Self, GKRError> {
         let mut graph = Graph::new(nodes).map_err(|e| GKRError::GraphError(e))?;
         graph.forward(values).map_err(|e| GKRError::GraphError(e))?;
@@ -68,13 +68,13 @@ pub fn get_wiring_rep<'a>(graph: Graph<'a>) -> Result<Vec<Layer>, GKRError> {
         return Err(GKRError::TraceNotGenerated);
     }
 
-    let mut layers = vec![];
+    let mut layers: Vec<Layer> = vec![];
     for (index, layer_nodes) in &graph.nodes {
         let mut layer = Layer {
             k: get_k(layer_nodes.len()),
             add: SparsePolynomial::zero(),
             mult: SparsePolynomial::zero(),
-            input: SparsePolynomial::zero(),
+            func: SparsePolynomial::zero(),
             wire: (vec![], vec![]),
         };
 
@@ -107,6 +107,12 @@ pub fn get_wiring_rep<'a>(graph: Graph<'a>) -> Result<Vec<Layer>, GKRError> {
                     return Err(GKRError::GraphFormat);
                 }
             }
+
+            let prev_layer = layers[*index - 1];
+
+            let w_b = shift_poly_by_k(prev_layer.func, layer.k);
+            let w_c = shift_poly_by_k(prev_layer.func, layer.k + prev_layer.k);
+            layer.func = layer.add * (w_b + w_c) + layer.mult * (w_b * w_c)
         // input layer
         } else {
             let mut binary_inputs = vec![];
@@ -123,12 +129,22 @@ pub fn get_wiring_rep<'a>(graph: Graph<'a>) -> Result<Vec<Layer>, GKRError> {
             }
             let input: Vec<Chars> = binary_inputs.iter().map(|s| s.chars()).collect();
             let input_poly = polynomial_from_binary(input, evals);
-            layer.input = input_poly;
+            layer.func = input_poly;
         }
         layers.push(layer);
     }
 
     Ok(layers)
+}
+
+pub fn shift_poly_by_k(p: MultiPoly, k: usize) -> MultiPoly {
+    let terms = p.terms();
+    let mut shifted_terms = vec![];
+    for (unit, term) in terms {
+        let shifted_term = SparseTerm::new((*term).iter().map(|c| (c.0 + k, c.1)).collect());
+        shifted_terms.push((*unit, shifted_term));
+    }
+    SparsePolynomial::from_coefficients_vec(2 * k, shifted_terms)
 }
 
 pub fn polynomial_from_binary(inputs: Vec<Chars>, evals: Vec<ScalarField>) -> MultiPoly {
@@ -181,7 +197,7 @@ mod tests {
     use ark_bn254::Fr as ScalarField;
     use ark_poly::{
         polynomial::multivariate::{SparsePolynomial, SparseTerm, Term},
-        MVPolynomial,
+        DenseMVPolynomial,
     };
 
     #[test]
@@ -211,6 +227,63 @@ mod tests {
             ],
         );
         assert_eq!(poly1, poly2);
+    }
+
+    #[test]
+    pub fn test_poly_shift() {
+        // Create a multivariate polynomial in 3 variables, with 4 terms:
+        // 2*x_0^3 + x_0*x_2 +x_0*x_2   + x_1*x_2 + 5
+        let poly1 = SparsePolynomial::from_coefficients_vec(
+            3,
+            vec![
+                (ScalarField::from(2), SparseTerm::new(vec![(0, 3)])),
+                (ScalarField::from(1), SparseTerm::new(vec![(0, 1), (2, 1)])),
+                (ScalarField::from(1), SparseTerm::new(vec![(0, 1), (2, 1)])),
+                (ScalarField::from(1), SparseTerm::new(vec![(1, 1), (2, 1)])),
+                (ScalarField::from(5), SparseTerm::new(vec![])),
+            ],
+        );
+
+        let poly2 = shift_poly_by_k(poly1, poly1.num_vars());
+
+        assert_eq!(
+            poly2,
+            SparsePolynomial::from_coefficients_vec(
+                6,
+                vec![
+                    (ScalarField::from(2), SparseTerm::new(vec![(3, 3)])),
+                    (ScalarField::from(1), SparseTerm::new(vec![(3, 1), (5, 1)])),
+                    (ScalarField::from(1), SparseTerm::new(vec![(3, 1), (5, 1)])),
+                    (ScalarField::from(1), SparseTerm::new(vec![(4, 1), (5, 1)])),
+                    (ScalarField::from(5), SparseTerm::new(vec![])),
+                ],
+            )
+        );
+
+        // Create a multivariate polynomial in 3 variables, with 4 terms:
+        // 2*x_0^3 + 2*x_0*x_2   + x_1*x_2 + 5
+        let poly1 = SparsePolynomial::from_coefficients_vec(
+            3,
+            vec![
+                (ScalarField::from(2), SparseTerm::new(vec![(0, 3)])),
+                (ScalarField::from(2), SparseTerm::new(vec![(0, 1), (2, 1)])),
+                (ScalarField::from(1), SparseTerm::new(vec![(1, 1), (2, 1)])),
+                (ScalarField::from(5), SparseTerm::new(vec![])),
+            ],
+        );
+        let poly2 = shift_poly_by_k(poly1, poly1.num_vars());
+        assert_eq!(
+            poly2,
+            SparsePolynomial::from_coefficients_vec(
+                6,
+                vec![
+                    (ScalarField::from(2), SparseTerm::new(vec![(3, 3)])),
+                    (ScalarField::from(2), SparseTerm::new(vec![(3, 1), (5, 1)])),
+                    (ScalarField::from(1), SparseTerm::new(vec![(4, 1), (5, 1)])),
+                    (ScalarField::from(5), SparseTerm::new(vec![])),
+                ],
+            )
+        );
     }
 
     #[test]
@@ -382,7 +455,7 @@ mod tests {
         assert_eq!(layers[0].mult, SparsePolynomial::zero());
         assert_eq!(layers[0].add, SparsePolynomial::zero());
         assert_eq!(
-            layers[0].input,
+            layers[0].func,
             SparsePolynomial::from_coefficients_vec(
                 1,
                 vec![
@@ -408,7 +481,7 @@ mod tests {
                 ],
             )
         );
-        assert_eq!(layers[1].input, SparsePolynomial::zero());
+        assert_eq!(layers[1].func, SparsePolynomial::zero());
     }
 
     #[test]
@@ -441,7 +514,7 @@ mod tests {
         assert_eq!(layers[0].add, SparsePolynomial::zero());
         assert_eq!(layers[0].mult, SparsePolynomial::zero());
         assert_eq!(
-            layers[0].input,
+            layers[0].func,
             SparsePolynomial::from_coefficients_vec(
                 1,
                 vec![
@@ -467,6 +540,6 @@ mod tests {
                 ],
             )
         );
-        assert_eq!(layers[1].input, SparsePolynomial::zero());
+        assert_eq!(layers[1].func, SparsePolynomial::zero());
     }
 }

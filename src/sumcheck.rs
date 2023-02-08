@@ -2,7 +2,7 @@ use ark_bn254::Fr as ScalarField;
 use ark_ff::Field;
 use ark_poly::polynomial::multivariate::{SparsePolynomial, SparseTerm, Term};
 use ark_poly::polynomial::univariate::SparsePolynomial as UniSparsePolynomial;
-use ark_poly::{MVPolynomial, Polynomial};
+use ark_poly::{DenseMVPolynomial, Polynomial};
 use rand::Rng;
 
 pub type MultiPoly = SparsePolynomial<ScalarField, SparseTerm>;
@@ -18,14 +18,14 @@ pub fn n_to_vec(i: usize, n: usize) -> Vec<ScalarField> {
 
 // Simulates memory of a single prover instance
 #[derive(Debug, Clone)]
-pub struct SumCheck {
+pub struct Prover {
     pub g: MultiPoly,
     pub r_vec: Vec<ScalarField>,
 }
 
-impl SumCheck {
+impl Prover {
     pub fn new(g: &MultiPoly) -> Self {
-        SumCheck {
+        Prover {
             g: g.clone(),
             r_vec: vec![],
         }
