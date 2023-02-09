@@ -8,9 +8,9 @@ use rand::Rng;
 pub type MultiPoly = SparsePolynomial<ScalarField, SparseTerm>;
 pub type UniPoly = UniSparsePolynomial<ScalarField>;
 
-// Converts i into an index in {0,1}^v
-pub fn n_to_vec(i: usize, n: usize) -> Vec<ScalarField> {
-    format!("{:0>width$}", format!("{:b}", i), width = n)
+// Converts i into an index in {0,1}^k
+pub fn n_to_vec(i: usize, k: usize) -> Vec<ScalarField> {
+    format!("{:0k$b}", i, k = k)
         .chars()
         .map(|x| if x == '1' { 1.into() } else { 0.into() })
         .collect()
@@ -80,17 +80,7 @@ impl Prover {
         (coeff, fixed_term)
     }
 
-    // Sum all evaluations of polynomial `g` over boolean hypercube
-    pub fn slow_sum_g(&self) -> ScalarField {
-        let v = self.g.num_vars();
-        let n = 2u32.pow(v as u32);
-        (0..n)
-            .map(|n| self.g.evaluate(&n_to_vec(n as usize, v)))
-            .sum()
-    }
-
     // Verify prover's claim c_1
-    // Presented pedantically:
     pub fn verify(&mut self, c_1: ScalarField) -> bool {
         // 1st round
         let mut gi = self.gen_uni_polynomial(None);
@@ -116,6 +106,7 @@ impl Prover {
         assert_eq!(expected_c, new_c);
         true
     }
+
     // Verifier procedures
     pub fn get_r(&self) -> Option<ScalarField> {
         let mut rng = rand::thread_rng();

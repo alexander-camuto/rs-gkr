@@ -2,7 +2,7 @@ use crate::poly_utils::*;
 use ark_bn254::Fr as ScalarField;
 use ark_ff::Zero;
 use ark_poly::polynomial::multivariate::SparsePolynomial;
-use core::str::Chars;
+use ark_poly::Polynomial;
 use std::cmp::max;
 use std::collections::HashMap;
 use std::collections::{btree_map::Entry, BTreeMap, HashSet};
@@ -30,12 +30,104 @@ pub enum Node<'a> {
 }
 
 #[derive(Debug, PartialEq, Clone)]
-pub struct MVLayer {
-    pub k: usize,
-    pub add: MultiPoly,
-    pub mult: MultiPoly,
-    pub func: MultiPoly,
-    pub wire: (Vec<Vec<ScalarField>>, Vec<Vec<ScalarField>>),
+pub enum MVLayer {
+    OutputLayer {
+        k: usize,
+        add: MultiPoly,
+        mult: MultiPoly,
+        w_b: MultiPoly,
+        w_c: MultiPoly,
+        d: MultiPoly,
+    },
+    InterLayer {
+        k: usize,
+        add: MultiPoly,
+        mult: MultiPoly,
+        w_b: MultiPoly,
+        w_c: MultiPoly,
+    },
+    InputLayer {
+        k: usize,
+        input_ext: MultiPoly,
+    },
+}
+
+impl MVLayer {
+    pub fn evaluation_ext(&self) -> MultiPoly {
+        match self {
+            Self::InputLayer { k: _, input_ext } => input_ext.clone(),
+            Self::OutputLayer { d, .. } => d.clone(),
+            Self::InterLayer { .. } => panic!(),
+        }
+    }
+
+    pub fn w_ext_gate_eval(&self, r: &Vec<ScalarField>) -> MultiPoly {
+        match self {
+            Self::InputLayer { k: _, input_ext } => input_ext.clone(),
+            Self::InterLayer {
+                k: _,
+                add,
+                mult,
+                w_b,
+                w_c,
+            }
+            | Self::OutputLayer {
+                k: _,
+                add,
+                mult,
+                w_b,
+                w_c,
+                ..
+            } => {
+                println!("extension eval {:?} add {:?} mult {:?}", r, add, mult);
+                mult_poly(&evaluate_variable(add, r), &(w_b + w_c))
+                    + mult_poly(&evaluate_variable(mult, r), &mult_poly(&w_b, &w_c))
+            }
+        }
+    }
+
+    pub fn w_ext(&self) -> MultiPoly {
+        match self {
+            Self::InputLayer { k: _, input_ext } => input_ext.clone(),
+            Self::InterLayer {
+                k: _,
+                add,
+                mult,
+                w_b,
+                w_c,
+            }
+            | Self::OutputLayer {
+                k: _,
+                add,
+                mult,
+                w_b,
+                w_c,
+                ..
+            } => mult_poly(add, &(w_b + w_c)) + mult_poly(mult, &mult_poly(&w_b, &w_c)),
+        }
+    }
+
+    pub fn w_ext_line_restricted_values(
+        &self,
+        r: &Vec<ScalarField>,
+        q0: ScalarField,
+        q1: ScalarField,
+    ) -> ScalarField {
+        match self {
+            Self::InputLayer { .. } => panic!(),
+            Self::InterLayer { add, mult, .. } | Self::OutputLayer { add, mult, .. } => {
+                add.evaluate(r) * (q0 + q1) + mult.evaluate(r) * (q0 * q1)
+            }
+        }
+    }
+
+    pub fn k(&self) -> usize {
+        match self {
+            Self::InputLayer { k, .. }
+            | Self::InterLayer { k, .. }
+            | Self::OutputLayer { k, .. } => *k,
+        }
+    }
 }
 
 #[derive(Error, Debug, PartialEq)]
@@ -72,8 +164,6 @@ impl<'a> Graph<'a> {
         // remove duplicates
         let mut seen = HashSet::new();
         nodes.retain(|item| seen.insert(*item));
-
-        print!("{:?}", nodes);
 
         let mut graph = Self {
             nodes: BTreeMap::new(),
@@ -213,19 +303,14 @@ impl<'a> Graph<'a> {
 
         let mut layers: Vec<MVLayer> = vec![];
         for (index, layer_nodes) in &self.nodes {
-            let mut layer = MVLayer {
-                k: get_k(layer_nodes.len()),
-                add: SparsePolynomial::zero(),
-                mult: SparsePolynomial::zero(),
-                func: SparsePolynomial::zero(),
-                wire: (vec![], vec![]),
-            };
-
-            if index > &0 {
+            let k = get_k(layer_nodes.len());
+            let layer = if index > &0 {
+                let mut add_ext = SparsePolynomial::zero();
+                let mut mult_ext = SparsePolynomial::zero();
                 for (curr, node) in layer_nodes.iter().enumerate() {
                     if let Node::Add { inputs, .. } | Node::Mult { inputs, .. } = node {
                         // index of current node in layer as a binary string
-                        let curr_string = format!("{:0k$b}", curr, k = layer.k);
+                        let curr_string = format!("{:0k$b}", curr, k = k);
                         // get index of inbound nodes to the current gate
                         let prev_nodes = &self.nodes[&(index - 1)];
                         let prev_k = get_k(layer_nodes.len());
@@ -241,9 +326,9 @@ impl<'a> Graph<'a> {
                         let poly =
                             polynomial_from_binary(vec![input.chars()], vec![ScalarField::from(1)]);
                         if let Node::Add { .. } = node {
-                            layer.add = layer.add + poly;
+                            add_ext = add_ext + poly;
                         } else if let Node::Mult { .. } = node {
-                            layer.mult = layer.mult + poly;
+                            mult_ext = mult_ext + poly;
                         }
                     // input node
                     } else {
@@ -253,27 +338,48 @@ impl<'a> Graph<'a> {
 
                 let prev_layer = &layers[*index - 1];
 
-                let w_b = shift_poly_by_k(prev_layer.clone().func, layer.k);
-                let w_c = shift_poly_by_k(prev_layer.clone().func, layer.k + prev_layer.k);
-                layer.func = mult_poly(layer.clone().add, w_b.clone() + w_c.clone())
-                    + mult_poly(layer.clone().mult, mult_poly(w_b, w_c));
-            } else {
-                let mut binary_inputs = vec![];
-                let mut evals = vec![];
-                for (curr, node) in layer_nodes.iter().enumerate() {
-                    if let Node::Input { .. } = node {
-                        // index of current node in layer as a binary string
-                        let curr_string = format!("{:0k$b}", curr, k = layer.k);
-                        binary_inputs.push(curr_string);
-                        evals.push(*self.last_trace.get(&node).unwrap());
-                    } else {
-                        return Err(GraphError::Format);
+                let w_b = shift_poly_by_k(&prev_layer.w_ext(), k);
+                let w_c = shift_poly_by_k(&prev_layer.w_ext(), prev_layer.k());
+                if *index == &self.nodes.len() - 1 {
+                    let output_poly = multilinear_polynomial_from_evals(
+                        (0..layer_nodes.len()).collect(),
+                        layer_nodes
+                            .iter()
+                            .map(|n| *self.last_trace.get(&n).unwrap())
+                            .collect(),
+                        k,
+                    );
+                    MVLayer::OutputLayer {
+                        k: get_k(layer_nodes.len()),
+                        add: add_ext,
+                        mult: mult_ext,
+                        w_b,
+                        w_c,
+                        d: output_poly,
+                    }
+                } else {
+                    MVLayer::InterLayer {
+                        k: get_k(layer_nodes.len()),
+                        add: add_ext,
+                        mult: mult_ext,
+                        w_b,
+                        w_c,
                     }
                 }
-                let input: Vec<Chars> = binary_inputs.iter().map(|s| s.chars()).collect();
-                let input_poly = polynomial_from_binary(input, evals);
-                layer.func = input_poly;
-            }
+            } else {
+                let input_poly = multilinear_polynomial_from_evals(
+                    (0..layer_nodes.len()).collect(),
+                    layer_nodes
+                        .iter()
+                        .map(|n| *self.last_trace.get(&n).unwrap())
+                        .collect(),
+                    k,
+                );
+                MVLayer::InputLayer {
+                    k: get_k(layer_nodes.len()),
+                    input_ext: input_poly,
+                }
+            };
             layers.push(layer);
         }
         self.mv_layers = layers;
@@ -446,37 +552,49 @@ mod tests {
         let res = graph.get_multivariate_extension();
         assert!(res.is_ok());
 
-        assert_eq!(graph.mv_layers[0].mult, SparsePolynomial::zero());
-        assert_eq!(graph.mv_layers[0].add, SparsePolynomial::zero());
         assert_eq!(
-            graph.mv_layers[0].func,
-            SparsePolynomial::from_coefficients_vec(
-                1,
-                vec![
-                    (ScalarField::from(1), SparseTerm::new(vec![])),
-                    (ScalarField::from(1), SparseTerm::new(vec![(0, 1)]))
-                ],
-            )
+            graph.mv_layers[0],
+            MVLayer::InputLayer {
+                k: 1,
+                input_ext: SparsePolynomial::from_coefficients_vec(
+                    1,
+                    vec![
+                        (ScalarField::from(1), SparseTerm::new(vec![])),
+                        (ScalarField::from(1), SparseTerm::new(vec![(0, 1)]))
+                    ],
+                )
+            }
         );
 
-        assert_eq!(graph.mv_layers[1].mult, SparsePolynomial::zero());
         assert_eq!(
-            graph.mv_layers[1].add,
-            SparsePolynomial::from_coefficients_vec(
-                3,
-                vec![
-                    (ScalarField::from(1), SparseTerm::new(vec![(2, 1)])),
-                    (ScalarField::from(-1), SparseTerm::new(vec![(0, 1), (2, 1)])),
-                    (ScalarField::from(-1), SparseTerm::new(vec![(1, 1), (2, 1)])),
-                    (
-                        ScalarField::from(1),
-                        SparseTerm::new(vec![(0, 1), (1, 1), (2, 1)])
-                    )
-                ],
-            )
+            graph.mv_layers[1],
+            MVLayer::OutputLayer {
+                k: 0,
+                mult: SparsePolynomial::zero(),
+                add: SparsePolynomial::from_coefficients_vec(
+                    3,
+                    vec![
+                        (ScalarField::from(1), SparseTerm::new(vec![(2, 1)])),
+                        (ScalarField::from(-1), SparseTerm::new(vec![(0, 1), (2, 1)])),
+                        (ScalarField::from(-1), SparseTerm::new(vec![(1, 1), (2, 1)])),
+                        (
+                            ScalarField::from(1),
+                            SparseTerm::new(vec![(0, 1), (1, 1), (2, 1)])
+                        )
+                    ],
+                ),
+                w_b: shift_poly_by_k(&graph.mv_layers[0].w_ext(), 0),
+                w_c: shift_poly_by_k(&graph.mv_layers[0].w_ext(), 1),
+                d: multilinear_polynomial_from_evals(
+                    (0..graph.nodes[&1].len()).collect(),
+                    graph.nodes[&1]
+                        .iter()
+                        .map(|n| *graph.last_trace.get(&n).unwrap())
+                        .collect(),
+                    0,
+                ),
+            }
         );
-        // TODO: calculate by hand and fill this in
-        // assert_eq!(layers[1].func, SparsePolynomial::zero());
     }
 
     #[test]
@@ -506,36 +624,48 @@ mod tests {
         assert!(res.is_ok());
         res.unwrap();
 
-        assert_eq!(graph.mv_layers[0].add, SparsePolynomial::zero());
-        assert_eq!(graph.mv_layers[0].mult, SparsePolynomial::zero());
         assert_eq!(
-            graph.mv_layers[0].func,
-            SparsePolynomial::from_coefficients_vec(
-                1,
-                vec![
-                    (ScalarField::from(1), SparseTerm::new(vec![])),
-                    (ScalarField::from(1), SparseTerm::new(vec![(0, 1)]))
-                ],
-            )
+            graph.mv_layers[0],
+            MVLayer::InputLayer {
+                k: 1,
+                input_ext: SparsePolynomial::from_coefficients_vec(
+                    1,
+                    vec![
+                        (ScalarField::from(1), SparseTerm::new(vec![])),
+                        (ScalarField::from(1), SparseTerm::new(vec![(0, 1)]))
+                    ],
+                )
+            }
         );
 
-        assert_eq!(graph.mv_layers[1].add, SparsePolynomial::zero());
         assert_eq!(
-            graph.mv_layers[1].mult,
-            SparsePolynomial::from_coefficients_vec(
-                3,
-                vec![
-                    (ScalarField::from(1), SparseTerm::new(vec![(2, 1)])),
-                    (ScalarField::from(-1), SparseTerm::new(vec![(0, 1), (2, 1)])),
-                    (ScalarField::from(-1), SparseTerm::new(vec![(1, 1), (2, 1)])),
-                    (
-                        ScalarField::from(1),
-                        SparseTerm::new(vec![(0, 1), (1, 1), (2, 1)])
-                    )
-                ],
-            )
+            graph.mv_layers[1],
+            MVLayer::OutputLayer {
+                k: 0,
+                add: SparsePolynomial::zero(),
+                mult: SparsePolynomial::from_coefficients_vec(
+                    3,
+                    vec![
+                        (ScalarField::from(1), SparseTerm::new(vec![(2, 1)])),
+                        (ScalarField::from(-1), SparseTerm::new(vec![(0, 1), (2, 1)])),
+                        (ScalarField::from(-1), SparseTerm::new(vec![(1, 1), (2, 1)])),
+                        (
+                            ScalarField::from(1),
+                            SparseTerm::new(vec![(0, 1), (1, 1), (2, 1)])
+                        )
+                    ],
+                ),
+                w_b: shift_poly_by_k(&graph.mv_layers[0].w_ext(), 0),
+                w_c: shift_poly_by_k(&graph.mv_layers[0].w_ext(), 1),
+                d: multilinear_polynomial_from_evals(
+                    (0..graph.nodes[&1].len()).collect(),
+                    graph.nodes[&1]
+                        .iter()
+                        .map(|n| *graph.last_trace.get(&n).unwrap())
+                        .collect(),
+                    0,
+                ),
+            }
         );
-        // TODO: calculate by hand and fill this in
-        // assert_eq!(layers[1].func, SparsePolynomial::zero());
     }
 }
