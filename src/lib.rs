@@ -5,3 +5,5 @@ pub mod graph;
 pub mod sumcheck;
 
 pub mod gkr;
+
+pub mod poly_utils;
