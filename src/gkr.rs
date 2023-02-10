@@ -40,6 +40,7 @@ impl<'a> Prover<'a> {
         // 1st round
         let last_layer = self.graph.mv_layers.last().unwrap();
         let mut r_i: Vec<ScalarField> = (0..max(last_layer.k(), 1)).map(|_| self.get_r()).collect();
+        // let mut r_i = vec![ScalarField::zero()];
 
         let mut m_i = self
             .graph
@@ -47,11 +48,11 @@ impl<'a> Prover<'a> {
             .last()
             .unwrap()
             .evaluation_ext()
-            .evaluate(&vec![ScalarField::zero()]);
+            .evaluate(&r_i);
 
         // recursive sumchecks
         for (prev_idx, layer) in self.graph.mv_layers[1..].iter().enumerate().rev() {
-            let f_i = layer.w_ext_gate_eval(&vec![ScalarField::zero()]);
+            let f_i = layer.w_ext_gate_eval(&r_i);
             let mut sumcheck_prover = SumCheckProver::new(&f_i);
             sumcheck_prover.verify(m_i);
             let prev_layer = &self.graph.mv_layers[prev_idx];
@@ -79,12 +80,11 @@ impl<'a> Prover<'a> {
 
             let restricted_poly = restrict_poly_to_line(prev_layer.w_ext(), &lines);
 
-            let total_challenge = [r_i.as_slice(), sumcheck_prover.r_vec.as_slice()].concat();
             assert_eq!(
                 f_i.evaluate(&sumcheck_prover.r_vec),
                 // verifier's calc
                 layer.w_ext_line_restricted_values(
-                    &total_challenge,
+                    &[r_i.as_slice(), sumcheck_prover.r_vec.as_slice()].concat(),
                     restricted_poly.evaluate(&ScalarField::zero()),
                     restricted_poly.evaluate(&ScalarField::from(1))
                 )
@@ -112,28 +112,16 @@ mod tests {
 
     // #[ignore]
     #[test]
-    fn test_proof_validates() {
+    fn test_proof_validates_1_gate() {
         let first_input = Node::Input { id: 0 };
         let second_input = Node::Input { id: 1 };
-        // let third_input = Node::Input { id: 2 };
         let add_node = Node::Add {
             id: 0,
             inputs: [&first_input, &second_input],
         };
 
-        // let add_node2 = Node::Add {
-        //     id: 1,
-        //     inputs: [&first_input, &third_input],
-        // };
-
         let res = Prover::new(
-            vec![
-                &first_input,
-                &second_input,
-                // &third_input,
-                &add_node,
-                // &add_node2,
-            ],
+            vec![&first_input, &second_input, &add_node],
             vec![
                 InputValue {
                     id: 0,
@@ -143,10 +131,39 @@ mod tests {
                     id: 1,
                     value: ScalarField::from(1),
                 },
-                // InputValue {
-                //     id: 2,
-                //     value: ScalarField::from(5),
-                // },
+            ],
+        );
+        assert!(res.is_ok());
+        let prover = res.unwrap();
+
+        prover.verify();
+    }
+
+    #[test]
+    fn test_proof_validates_2_gate() {
+        let first_input = Node::Input { id: 0 };
+        let second_input = Node::Input { id: 1 };
+        let add_node = Node::Add {
+            id: 0,
+            inputs: [&first_input, &second_input],
+        };
+
+        let add_node2 = Node::Mult {
+            id: 1,
+            inputs: [&first_input, &second_input],
+        };
+
+        let res = Prover::new(
+            vec![&first_input, &second_input, &add_node, &add_node2],
+            vec![
+                InputValue {
+                    id: 0,
+                    value: ScalarField::from(1),
+                },
+                InputValue {
+                    id: 1,
+                    value: ScalarField::from(2),
+                },
             ],
         );
         assert!(res.is_ok());

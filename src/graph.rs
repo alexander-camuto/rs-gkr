@@ -597,8 +597,6 @@ mod tests {
                 ),
             }
         );
-
-        // assert_eq!(graph.mv_layers[1].w_ext_gate_eval(ScalarField::zero()),)
     }
 
     #[test]
@@ -671,4 +669,88 @@ mod tests {
             }
         );
     }
+
+    #[test]
+    fn test_graph_wiring_2_gate() {
+        let first_input = Node::Input { id: 0 };
+        let second_input = Node::Input { id: 1 };
+        let add_node = Node::Add {
+            id: 0,
+            inputs: [&first_input, &second_input],
+        };
+        let mult_node = Node::Mult {
+            id: 1,
+            inputs: [&first_input, &second_input],
+        };
+        let res = Graph::new(vec![&first_input, &second_input, &add_node, &mult_node]);
+        assert!(res.is_ok());
+        let mut graph = res.unwrap();
+        let res = graph.forward(vec![
+            InputValue {
+                id: 0,
+                value: ScalarField::from(1),
+            },
+            InputValue {
+                id: 1,
+                value: ScalarField::from(2),
+            },
+        ]);
+        assert!(res.is_ok());
+
+        let res = graph.get_multivariate_extension();
+        assert!(res.is_ok());
+
+        assert_eq!(
+            graph.mv_layers[0],
+            MVLayer::InputLayer {
+                k: 1,
+                input_ext: SparsePolynomial::from_coefficients_vec(
+                    1,
+                    vec![
+                        (ScalarField::from(1), SparseTerm::new(vec![])),
+                        (ScalarField::from(1), SparseTerm::new(vec![(0, 1)]))
+                    ],
+                )
+            }
+        );
+
+        assert_eq!(
+            graph.mv_layers[1],
+            MVLayer::OutputLayer {
+                k: 1,
+                mult: SparsePolynomial::from_coefficients_vec(
+                    3,
+                    vec![
+                        (ScalarField::from(1), SparseTerm::new(vec![(0, 1), (2, 1)])),
+                        (
+                            ScalarField::from(-1),
+                            SparseTerm::new(vec![(0, 1), (1, 1), (2, 1)])
+                        )
+                    ],
+                ),
+                add: SparsePolynomial::from_coefficients_vec(
+                    3,
+                    vec![
+                        (ScalarField::from(1), SparseTerm::new(vec![(2, 1)])),
+                        (ScalarField::from(-1), SparseTerm::new(vec![(0, 1), (2, 1)])),
+                        (ScalarField::from(-1), SparseTerm::new(vec![(1, 1), (2, 1)])),
+                        (
+                            ScalarField::from(1),
+                            SparseTerm::new(vec![(0, 1), (1, 1), (2, 1)])
+                        )
+                    ],
+                ),
+                w_b: shift_poly_by_k(&graph.mv_layers[0].evaluation_ext(), 1),
+                w_c: shift_poly_by_k(&graph.mv_layers[0].evaluation_ext(), 2),
+                d: SparsePolynomial::from_coefficients_vec(
+                    1,
+                    vec![
+                        (ScalarField::from(-1), SparseTerm::new(vec![(0, 1)])),
+                        (ScalarField::from(3), SparseTerm::new(vec![]))
+                    ],
+                ),
+            }
+        );
+    }
+    // assert_eq!(graph.mv_layers[1].w_ext_gate_eval(ScalarField::zero()),)
 }
