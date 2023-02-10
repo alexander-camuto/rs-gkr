@@ -316,7 +316,7 @@ impl<'a> Graph<'a> {
                         let curr_string = format!("{:0k$b}", curr, k = k);
                         // get index of inbound nodes to the current gate
                         let prev_nodes = &self.nodes[&(index - 1)];
-                        let prev_k = get_k(layer_nodes.len());
+                        let prev_k = get_k(prev_nodes.len());
                         let left_index = prev_nodes.iter().position(|&r| r == *inputs[0]).unwrap();
                         let right_index = prev_nodes.iter().position(|&r| r == *inputs[1]).unwrap();
 
@@ -325,6 +325,7 @@ impl<'a> Graph<'a> {
                         let right_string = format!("{:0k$b}", right_index, k = prev_k);
                         // total input as current node + inbound node 1 + inbound node 2
                         let input = format!("{}{}{}", curr_string, left_string, right_string);
+                        println!("input: {:?}, k: {:?}, prev_k: {:?}", input, k, prev_k);
 
                         let poly =
                             polynomial_from_binary(vec![input.chars()], vec![ScalarField::from(1)]);
@@ -752,5 +753,4 @@ mod tests {
             }
         );
     }
-    // assert_eq!(graph.mv_layers[1].w_ext_gate_eval(ScalarField::zero()),)
 }

@@ -6,7 +6,7 @@ use ark_ff::Zero;
 // use ark_poly::DenseMVPolynomial;
 use ark_poly::Polynomial;
 use rand::Rng;
-use std::cmp::max;
+// use std::cmp::max;
 use thiserror::Error;
 
 #[derive(Error, Debug, PartialEq)]
@@ -39,16 +39,10 @@ impl<'a> Prover<'a> {
     pub fn verify(&self) {
         // 1st round
         let last_layer = self.graph.mv_layers.last().unwrap();
-        let mut r_i: Vec<ScalarField> = (0..max(last_layer.k(), 1)).map(|_| self.get_r()).collect();
-        // let mut r_i = vec![ScalarField::zero()];
+        // let mut r_i: Vec<ScalarField> = (0..max(last_layer.k(), 1)).map(|_| self.get_r()).collect();
+        let mut r_i = vec![ScalarField::zero()];
 
-        let mut m_i = self
-            .graph
-            .mv_layers
-            .last()
-            .unwrap()
-            .evaluation_ext()
-            .evaluate(&r_i);
+        let mut m_i = last_layer.evaluation_ext().evaluate(&r_i);
 
         // recursive sumchecks
         for (prev_idx, layer) in self.graph.mv_layers[1..].iter().enumerate().rev() {
@@ -148,13 +142,13 @@ mod tests {
             inputs: [&first_input, &second_input],
         };
 
-        let add_node2 = Node::Mult {
+        let mult_node = Node::Mult {
             id: 1,
             inputs: [&first_input, &second_input],
         };
 
         let res = Prover::new(
-            vec![&first_input, &second_input, &add_node, &add_node2],
+            vec![&first_input, &second_input, &add_node, &mult_node],
             vec![
                 InputValue {
                     id: 0,
@@ -163,6 +157,94 @@ mod tests {
                 InputValue {
                     id: 1,
                     value: ScalarField::from(2),
+                },
+            ],
+        );
+        assert!(res.is_ok());
+        let prover = res.unwrap();
+
+        prover.verify()
+    }
+
+    #[test]
+    fn test_proof_validates_multi_layer() {
+        let first_input = Node::Input { id: 0 };
+        let second_input = Node::Input { id: 1 };
+        let add_node = Node::Add {
+            id: 0,
+            inputs: [&first_input, &second_input],
+        };
+
+        let mult_node = Node::Mult {
+            id: 1,
+            inputs: [&first_input, &second_input],
+        };
+
+        let add_node_final = Node::Add {
+            id: 2,
+            inputs: [&add_node, &mult_node],
+        };
+
+        let res = Prover::new(
+            vec![
+                &first_input,
+                &second_input,
+                &add_node,
+                &mult_node,
+                &add_node_final,
+            ],
+            vec![
+                InputValue {
+                    id: 0,
+                    value: ScalarField::from(1),
+                },
+                InputValue {
+                    id: 1,
+                    value: ScalarField::from(2),
+                },
+            ],
+        );
+        assert!(res.is_ok());
+        let prover = res.unwrap();
+
+        prover.verify()
+    }
+
+    #[test]
+    fn test_proof_validates_3_input() {
+        let first_input = Node::Input { id: 0 };
+        let second_input = Node::Input { id: 1 };
+        let third_input = Node::Input { id: 2 };
+        let add_node = Node::Add {
+            id: 0,
+            inputs: [&first_input, &second_input],
+        };
+
+        let mult_node = Node::Mult {
+            id: 1,
+            inputs: [&second_input, &third_input],
+        };
+
+        let res = Prover::new(
+            vec![
+                &first_input,
+                &second_input,
+                &third_input,
+                &add_node,
+                &mult_node,
+            ],
+            vec![
+                InputValue {
+                    id: 0,
+                    value: ScalarField::from(1),
+                },
+                InputValue {
+                    id: 1,
+                    value: ScalarField::from(1),
+                },
+                InputValue {
+                    id: 2,
+                    value: ScalarField::from(1),
                 },
             ],
         );
