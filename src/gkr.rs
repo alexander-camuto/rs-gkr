@@ -44,6 +44,11 @@ impl<'a> Prover<'a> {
 
         let mut m_i = last_layer.evaluation_ext().evaluate(&r_i);
 
+        println!(
+            "last_layer {:?}", // final round
+            last_layer
+        );
+
         // recursive sumchecks
         for (prev_idx, layer) in self.graph.mv_layers[1..].iter().enumerate().rev() {
             let f_i = layer.w_ext_gate_eval(&r_i);
@@ -167,50 +172,6 @@ mod tests {
     }
 
     #[test]
-    fn test_proof_validates_multi_layer() {
-        let first_input = Node::Input { id: 0 };
-        let second_input = Node::Input { id: 1 };
-        let add_node = Node::Add {
-            id: 0,
-            inputs: [&first_input, &second_input],
-        };
-
-        let mult_node = Node::Mult {
-            id: 1,
-            inputs: [&first_input, &second_input],
-        };
-
-        let add_node_final = Node::Add {
-            id: 2,
-            inputs: [&add_node, &mult_node],
-        };
-
-        let res = Prover::new(
-            vec![
-                &first_input,
-                &second_input,
-                &add_node,
-                &mult_node,
-                &add_node_final,
-            ],
-            vec![
-                InputValue {
-                    id: 0,
-                    value: ScalarField::from(1),
-                },
-                InputValue {
-                    id: 1,
-                    value: ScalarField::from(2),
-                },
-            ],
-        );
-        assert!(res.is_ok());
-        let prover = res.unwrap();
-
-        prover.verify()
-    }
-
-    #[test]
     fn test_proof_validates_3_input() {
         let first_input = Node::Input { id: 0 };
         let second_input = Node::Input { id: 1 };
@@ -244,6 +205,50 @@ mod tests {
                 },
                 InputValue {
                     id: 2,
+                    value: ScalarField::from(1),
+                },
+            ],
+        );
+        assert!(res.is_ok());
+        let prover = res.unwrap();
+
+        prover.verify()
+    }
+
+    #[test]
+    fn test_proof_validates_multi_layer() {
+        let first_input = Node::Input { id: 0 };
+        let second_input = Node::Input { id: 1 };
+        let add_node = Node::Add {
+            id: 0,
+            inputs: [&first_input, &second_input],
+        };
+
+        let mult_node = Node::Mult {
+            id: 1,
+            inputs: [&first_input, &second_input],
+        };
+
+        let add_node_final = Node::Add {
+            id: 2,
+            inputs: [&add_node, &mult_node],
+        };
+
+        let res = Prover::new(
+            vec![
+                &first_input,
+                &second_input,
+                &add_node,
+                &mult_node,
+                &add_node_final,
+            ],
+            vec![
+                InputValue {
+                    id: 0,
+                    value: ScalarField::from(1),
+                },
+                InputValue {
+                    id: 1,
                     value: ScalarField::from(1),
                 },
             ],

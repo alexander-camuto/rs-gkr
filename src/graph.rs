@@ -325,8 +325,6 @@ impl<'a> Graph<'a> {
                         let right_string = format!("{:0k$b}", right_index, k = prev_k);
                         // total input as current node + inbound node 1 + inbound node 2
                         let input = format!("{}{}{}", curr_string, left_string, right_string);
-                        println!("input: {:?}, k: {:?}, prev_k: {:?}", input, k, prev_k);
-
                         let poly =
                             polynomial_from_binary(vec![input.chars()], vec![ScalarField::from(1)]);
                         if let Node::Add { .. } = node {
