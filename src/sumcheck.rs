@@ -127,3 +127,68 @@ pub fn max_degrees(g: &MultiPoly) -> Vec<usize> {
     });
     lookup
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use ark_bn254::Fr as ScalarField;
+    use ark_poly::{
+        polynomial::multivariate::{SparseTerm, Term},
+        DenseMVPolynomial,
+    };
+
+    #[test]
+    pub fn test_can_verify() {
+        let poly = MultiPoly::from_coefficients_vec(
+            1,
+            vec![(ScalarField::from(2), SparseTerm::new(vec![(0, 3)]))],
+        );
+        let sum = ScalarField::from(2);
+
+        let mut prover = Prover::new(&poly);
+
+        prover.verify(sum);
+
+        let poly = MultiPoly::from_coefficients_vec(
+            3,
+            vec![
+                (ScalarField::from(2), SparseTerm::new(vec![(0, 1), (1, 1)])),
+                (ScalarField::from(5), SparseTerm::new(vec![(2, 1)])),
+                (ScalarField::from(1), SparseTerm::new(vec![])),
+            ],
+        );
+        let sum = ScalarField::from(32);
+
+        let mut prover = Prover::new(&poly);
+
+        prover.verify(sum);
+    }
+
+    #[test]
+    #[should_panic]
+    pub fn test_fails() {
+        let poly = MultiPoly::from_coefficients_vec(
+            1,
+            vec![(ScalarField::from(2), SparseTerm::new(vec![(0, 3)]))],
+        );
+        let sum = ScalarField::from(2);
+
+        let mut prover = Prover::new(&poly);
+
+        prover.verify(sum);
+
+        let poly = MultiPoly::from_coefficients_vec(
+            3,
+            vec![
+                (ScalarField::from(2), SparseTerm::new(vec![(0, 1), (1, 1)])),
+                (ScalarField::from(5), SparseTerm::new(vec![(2, 1)])),
+                (ScalarField::from(1), SparseTerm::new(vec![])),
+            ],
+        );
+        let sum = ScalarField::from(36);
+
+        let mut prover = Prover::new(&poly);
+
+        prover.verify(sum);
+    }
+}
