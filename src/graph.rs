@@ -79,9 +79,12 @@ impl MVLayer {
                 w_c,
                 ..
             } => {
-                println!("extension eval {:?} add {:?} mult {:?}", r, add, mult);
-                mult_poly(&evaluate_variable(add, r), &(w_b + w_c))
-                    + mult_poly(&evaluate_variable(mult, r), &mult_poly(&w_b, &w_c))
+                let mut reduced_add_poly = mult_poly(&evaluate_variable(add, r), &(w_b + w_c));
+                reduced_add_poly = neg_shift_poly_by_k(&reduced_add_poly, r.len());
+                let mut reduced_mult_poly =
+                    mult_poly(&evaluate_variable(mult, r), &mult_poly(&w_b, &w_c));
+                reduced_mult_poly = neg_shift_poly_by_k(&reduced_mult_poly, r.len());
+                reduced_add_poly + reduced_mult_poly
             }
         }
     }
@@ -338,8 +341,8 @@ impl<'a> Graph<'a> {
 
                 let prev_layer = &layers[*index - 1];
 
-                let w_b = shift_poly_by_k(&prev_layer.w_ext(), k);
-                let w_c = shift_poly_by_k(&prev_layer.w_ext(), prev_layer.k());
+                let w_b = shift_poly_by_k(&prev_layer.w_ext(), max(k, 1));
+                let w_c = shift_poly_by_k(&prev_layer.w_ext(), prev_layer.k() + max(k, 1));
                 if *index == &self.nodes.len() - 1 {
                     let output_poly = multilinear_polynomial_from_evals(
                         (0..layer_nodes.len()).collect(),
@@ -583,18 +586,19 @@ mod tests {
                         )
                     ],
                 ),
-                w_b: shift_poly_by_k(&graph.mv_layers[0].w_ext(), 0),
-                w_c: shift_poly_by_k(&graph.mv_layers[0].w_ext(), 1),
-                d: multilinear_polynomial_from_evals(
-                    (0..graph.nodes[&1].len()).collect(),
-                    graph.nodes[&1]
-                        .iter()
-                        .map(|n| *graph.last_trace.get(&n).unwrap())
-                        .collect(),
-                    0,
+                w_b: shift_poly_by_k(&graph.mv_layers[0].evaluation_ext(), 1),
+                w_c: shift_poly_by_k(&graph.mv_layers[0].evaluation_ext(), 2),
+                d: SparsePolynomial::from_coefficients_vec(
+                    1,
+                    vec![
+                        (ScalarField::from(-3), SparseTerm::new(vec![(0, 1)])),
+                        (ScalarField::from(3), SparseTerm::new(vec![]))
+                    ],
                 ),
             }
         );
+
+        // assert_eq!(graph.mv_layers[1].w_ext_gate_eval(ScalarField::zero()),)
     }
 
     #[test]
@@ -655,15 +659,14 @@ mod tests {
                         )
                     ],
                 ),
-                w_b: shift_poly_by_k(&graph.mv_layers[0].w_ext(), 0),
-                w_c: shift_poly_by_k(&graph.mv_layers[0].w_ext(), 1),
-                d: multilinear_polynomial_from_evals(
-                    (0..graph.nodes[&1].len()).collect(),
-                    graph.nodes[&1]
-                        .iter()
-                        .map(|n| *graph.last_trace.get(&n).unwrap())
-                        .collect(),
-                    0,
+                w_b: shift_poly_by_k(&graph.mv_layers[0].evaluation_ext(), 1),
+                w_c: shift_poly_by_k(&graph.mv_layers[0].evaluation_ext(), 2),
+                d: SparsePolynomial::from_coefficients_vec(
+                    1,
+                    vec![
+                        (ScalarField::from(-2), SparseTerm::new(vec![(0, 1)])),
+                        (ScalarField::from(2), SparseTerm::new(vec![]))
+                    ],
                 ),
             }
         );

@@ -95,6 +95,17 @@ pub fn shift_poly_by_k(p: &MultiPoly, k: usize) -> MultiPoly {
     MultiPoly::from_coefficients_vec(current_num_vars + k, shifted_terms)
 }
 
+pub fn neg_shift_poly_by_k(p: &MultiPoly, k: usize) -> MultiPoly {
+    let terms = p.terms();
+    let current_num_vars = p.num_vars();
+    let mut shifted_terms = vec![];
+    for (unit, term) in terms {
+        let shifted_term = SparseTerm::new((*term).iter().map(|c| (c.0 - k, c.1)).collect());
+        shifted_terms.push((*unit, shifted_term));
+    }
+    MultiPoly::from_coefficients_vec(current_num_vars - k, shifted_terms)
+}
+
 pub fn multilinear_polynomial_from_evals(
     inputs: Vec<usize>,
     evals: Vec<ScalarField>,
@@ -112,7 +123,7 @@ pub fn multilinear_polynomial_from_evals(
 
 pub fn polynomial_from_binary(inputs: Vec<Chars>, evals: Vec<ScalarField>) -> MultiPoly {
     let mut terms: Vec<(ScalarField, SparseTerm)> = vec![];
-    let num_vars = inputs.iter().map(|c| c.clone().count()).sum();
+    let num_vars = inputs.iter().map(|c| c.clone().count()).max().unwrap();
     // let mut offset = 0;
     for (input, unit) in inputs.iter().zip(evals) {
         let mut current_term: Vec<(ScalarField, SparseTerm)> = vec![];
@@ -584,5 +595,60 @@ mod tests {
                 (2, ScalarField::from(-6))
             ])
         )
+    }
+
+    #[test]
+    pub fn test_variable_evaluation() {
+        let poly = MultiPoly::from_coefficients_vec(
+            2,
+            vec![
+                (ScalarField::from(3), SparseTerm::new(vec![(0, 1), (1, 1)])),
+                (ScalarField::from(2), SparseTerm::new(vec![(1, 1)])),
+            ],
+        );
+        assert_eq!(
+            evaluate_variable(&poly, &vec![ScalarField::zero()]),
+            MultiPoly::from_coefficients_vec(
+                2,
+                vec![(ScalarField::from(2), SparseTerm::new(vec![(1, 1)])),],
+            )
+        );
+
+        assert_eq!(
+            evaluate_variable(&poly, &vec![ScalarField::from(1)]),
+            MultiPoly::from_coefficients_vec(
+                2,
+                vec![(ScalarField::from(5), SparseTerm::new(vec![(1, 1)])),],
+            )
+        );
+
+        let poly = MultiPoly::from_coefficients_vec(
+            3,
+            vec![
+                (ScalarField::from(3), SparseTerm::new(vec![(0, 1), (1, 1)])),
+                (ScalarField::from(2), SparseTerm::new(vec![(1, 1)])),
+                (ScalarField::from(2), SparseTerm::new(vec![(0, 1), (2, 1)])),
+                (ScalarField::from(2), SparseTerm::new(vec![(2, 2)])),
+            ],
+        );
+        assert_eq!(
+            evaluate_variable(&poly, &vec![ScalarField::zero(), ScalarField::zero()]),
+            MultiPoly::from_coefficients_vec(
+                3,
+                vec![(ScalarField::from(2), SparseTerm::new(vec![(2, 2)])),],
+            )
+        );
+
+        assert_eq!(
+            evaluate_variable(&poly, &vec![ScalarField::from(1), ScalarField::from(1)]),
+            MultiPoly::from_coefficients_vec(
+                3,
+                vec![
+                    (ScalarField::from(5), SparseTerm::new(vec![])),
+                    (ScalarField::from(2), SparseTerm::new(vec![(2, 1)])),
+                    (ScalarField::from(2), SparseTerm::new(vec![(2, 2)])),
+                ],
+            )
+        );
     }
 }

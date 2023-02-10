@@ -3,7 +3,7 @@ use crate::poly_utils::{restrict_poly_to_line, unique_univariate_line};
 use crate::sumcheck::Prover as SumCheckProver;
 use ark_bn254::Fr as ScalarField;
 use ark_ff::Zero;
-use ark_poly::DenseMVPolynomial;
+// use ark_poly::DenseMVPolynomial;
 use ark_poly::Polynomial;
 use rand::Rng;
 use std::cmp::max;
@@ -41,31 +41,20 @@ impl<'a> Prover<'a> {
         let last_layer = self.graph.mv_layers.last().unwrap();
         let mut r_i: Vec<ScalarField> = (0..max(last_layer.k(), 1)).map(|_| self.get_r()).collect();
 
-        println!(
-            "{:?} {:?}",
-            r_i.len(),
-            self.graph
-                .mv_layers
-                .last()
-                .unwrap()
-                .evaluation_ext()
-                .num_vars(),
-        );
         let mut m_i = self
             .graph
             .mv_layers
             .last()
             .unwrap()
             .evaluation_ext()
-            .evaluate(&r_i);
+            .evaluate(&vec![ScalarField::zero()]);
 
         // recursive sumchecks
-        for (idx, layer) in self.graph.mv_layers[1..].iter().enumerate().rev() {
-            println!("{:?}", idx);
-            let f_i = layer.w_ext_gate_eval(&r_i);
+        for (prev_idx, layer) in self.graph.mv_layers[1..].iter().enumerate().rev() {
+            let f_i = layer.w_ext_gate_eval(&vec![ScalarField::zero()]);
             let mut sumcheck_prover = SumCheckProver::new(&f_i);
             sumcheck_prover.verify(m_i);
-            let prev_layer = &self.graph.mv_layers[idx - 1];
+            let prev_layer = &self.graph.mv_layers[prev_idx];
             let b = sumcheck_prover.r_vec[0..prev_layer.k()].to_vec();
             let c = sumcheck_prover.r_vec[prev_layer.k()..].to_vec();
             assert_eq!(b.len(), c.len());
@@ -90,10 +79,12 @@ impl<'a> Prover<'a> {
 
             let restricted_poly = restrict_poly_to_line(prev_layer.w_ext(), &lines);
 
+            let total_challenge = [r_i.as_slice(), sumcheck_prover.r_vec.as_slice()].concat();
             assert_eq!(
-                m_i,
+                f_i.evaluate(&sumcheck_prover.r_vec),
+                // verifier's calc
                 layer.w_ext_line_restricted_values(
-                    &r_i,
+                    &total_challenge,
                     restricted_poly.evaluate(&ScalarField::zero()),
                     restricted_poly.evaluate(&ScalarField::from(1))
                 )
@@ -119,17 +110,30 @@ impl<'a> Prover<'a> {
 mod tests {
     use super::*;
 
+    // #[ignore]
     #[test]
     fn test_proof_validates() {
         let first_input = Node::Input { id: 0 };
         let second_input = Node::Input { id: 1 };
+        // let third_input = Node::Input { id: 2 };
         let add_node = Node::Add {
             id: 0,
             inputs: [&first_input, &second_input],
         };
 
+        // let add_node2 = Node::Add {
+        //     id: 1,
+        //     inputs: [&first_input, &third_input],
+        // };
+
         let res = Prover::new(
-            vec![&first_input, &second_input, &add_node],
+            vec![
+                &first_input,
+                &second_input,
+                // &third_input,
+                &add_node,
+                // &add_node2,
+            ],
             vec![
                 InputValue {
                     id: 0,
@@ -137,8 +141,12 @@ mod tests {
                 },
                 InputValue {
                     id: 1,
-                    value: ScalarField::from(2),
+                    value: ScalarField::from(1),
                 },
+                // InputValue {
+                //     id: 2,
+                //     value: ScalarField::from(5),
+                // },
             ],
         );
         assert!(res.is_ok());
