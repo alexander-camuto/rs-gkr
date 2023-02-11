@@ -1,3 +1,4 @@
+use crate::poly_utils::n_to_vec;
 use ark_bn254::Fr as ScalarField;
 use ark_ff::Field;
 use ark_poly::polynomial::multivariate::{SparsePolynomial, SparseTerm, Term};
@@ -7,14 +8,6 @@ use rand::Rng;
 
 pub type MultiPoly = SparsePolynomial<ScalarField, SparseTerm>;
 pub type UniPoly = UniSparsePolynomial<ScalarField>;
-
-// Converts i into an index in {0,1}^k
-pub fn n_to_vec(i: usize, k: usize) -> Vec<ScalarField> {
-    format!("{:0k$b}", i, k = k)
-        .chars()
-        .map(|x| if x == '1' { 1.into() } else { 0.into() })
-        .collect()
-}
 
 // Simulates memory of a single prover instance
 #[derive(Debug, Clone)]

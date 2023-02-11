@@ -33,6 +33,7 @@ pub enum Node<'a> {
 pub enum MVLayer {
     OutputLayer {
         k: usize,
+        prev_k: usize,
         add: MultiPoly,
         mult: MultiPoly,
         w_b: MultiPoly,
@@ -41,6 +42,7 @@ pub enum MVLayer {
     },
     InterLayer {
         k: usize,
+        prev_k: usize,
         add: MultiPoly,
         mult: MultiPoly,
         w_b: MultiPoly,
@@ -65,14 +67,13 @@ impl MVLayer {
         match self {
             Self::InputLayer { k: _, input_ext } => input_ext.clone(),
             Self::InterLayer {
-                k: _,
                 add,
                 mult,
                 w_b,
                 w_c,
+                ..
             }
             | Self::OutputLayer {
-                k: _,
                 add,
                 mult,
                 w_b,
@@ -94,6 +95,7 @@ impl MVLayer {
             Self::InputLayer { k: _, input_ext } => input_ext.clone(),
             Self::InterLayer {
                 k: _,
+                prev_k,
                 add,
                 mult,
                 w_b,
@@ -101,12 +103,16 @@ impl MVLayer {
             }
             | Self::OutputLayer {
                 k: _,
+                prev_k,
                 add,
                 mult,
                 w_b,
                 w_c,
                 ..
-            } => mult_poly(add, &(w_b + w_c)) + mult_poly(mult, &mult_poly(&w_b, &w_c)),
+            } => {
+                let f = mult_poly(add, &(w_b + w_c)) + mult_poly(mult, &mult_poly(&w_b, &w_c));
+                sum_last_k_var(&f, 2 * prev_k)
+            }
         }
     }
 
@@ -314,6 +320,7 @@ impl<'a> Graph<'a> {
                     if let Node::Add { inputs, .. } | Node::Mult { inputs, .. } = node {
                         // index of current node in layer as a binary string
                         let curr_string = format!("{:0k$b}", curr, k = k);
+
                         // get index of inbound nodes to the current gate
                         let prev_nodes = &self.nodes[&(index - 1)];
                         let prev_k = get_k(prev_nodes.len());
@@ -325,8 +332,10 @@ impl<'a> Graph<'a> {
                         let right_string = format!("{:0k$b}", right_index, k = prev_k);
                         // total input as current node + inbound node 1 + inbound node 2
                         let input = format!("{}{}{}", curr_string, left_string, right_string);
+
                         let poly =
                             polynomial_from_binary(vec![input.chars()], vec![ScalarField::from(1)]);
+
                         if let Node::Add { .. } = node {
                             add_ext = add_ext + poly;
                         } else if let Node::Mult { .. } = node {
@@ -353,6 +362,7 @@ impl<'a> Graph<'a> {
                     );
                     MVLayer::OutputLayer {
                         k: get_k(layer_nodes.len()),
+                        prev_k: prev_layer.k(),
                         add: add_ext,
                         mult: mult_ext,
                         w_b,
@@ -362,6 +372,7 @@ impl<'a> Graph<'a> {
                 } else {
                     MVLayer::InterLayer {
                         k: get_k(layer_nodes.len()),
+                        prev_k: prev_layer.k(),
                         add: add_ext,
                         mult: mult_ext,
                         w_b,
@@ -572,6 +583,7 @@ mod tests {
             graph.mv_layers[1],
             MVLayer::OutputLayer {
                 k: 0,
+                prev_k: 1,
                 mult: SparsePolynomial::zero(),
                 add: SparsePolynomial::from_coefficients_vec(
                     3,
@@ -643,6 +655,7 @@ mod tests {
             graph.mv_layers[1],
             MVLayer::OutputLayer {
                 k: 0,
+                prev_k: 1,
                 add: SparsePolynomial::zero(),
                 mult: SparsePolynomial::from_coefficients_vec(
                     3,
@@ -717,6 +730,7 @@ mod tests {
             graph.mv_layers[1],
             MVLayer::OutputLayer {
                 k: 1,
+                prev_k: 1,
                 mult: SparsePolynomial::from_coefficients_vec(
                     3,
                     vec![

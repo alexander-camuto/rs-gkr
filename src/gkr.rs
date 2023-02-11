@@ -44,11 +44,6 @@ impl<'a> Prover<'a> {
 
         let mut m_i = last_layer.evaluation_ext().evaluate(&r_i);
 
-        println!(
-            "last_layer {:?}", // final round
-            last_layer
-        );
-
         // recursive sumchecks
         for (prev_idx, layer) in self.graph.mv_layers[1..].iter().enumerate().rev() {
             let f_i = layer.w_ext_gate_eval(&r_i);
@@ -224,7 +219,7 @@ mod tests {
             inputs: [&first_input, &second_input],
         };
 
-        let mult_node = Node::Mult {
+        let mult_node = Node::Add {
             id: 1,
             inputs: [&first_input, &second_input],
         };

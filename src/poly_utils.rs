@@ -9,6 +9,14 @@ use std::cmp::max;
 pub type MultiPoly = SparsePolynomial<ScalarField, SparseTerm>;
 pub type UniPoly = UniSparsePolynomial<ScalarField>;
 
+// Converts i into an index in {0,1}^k
+pub fn n_to_vec(i: usize, k: usize) -> Vec<ScalarField> {
+    format!("{:0k$b}", i, k = k)
+        .chars()
+        .map(|x| if x == '1' { 1.into() } else { 0.into() })
+        .collect()
+}
+
 pub fn evaluate_variable(p: &MultiPoly, r: &Vec<ScalarField>) -> MultiPoly {
     if p.is_zero() {
         return p.clone();
@@ -26,6 +34,31 @@ pub fn evaluate_variable(p: &MultiPoly, r: &Vec<ScalarField>) -> MultiPoly {
             } else {
                 new_term.push((*var, *power));
             }
+        }
+        new_coefficients.push((new_unit, SparseTerm::new(new_term)));
+    }
+    MultiPoly::from_coefficients_vec(new_num_vars, new_coefficients)
+}
+
+pub fn sum_last_k_var(p: &MultiPoly, k: usize) -> MultiPoly {
+    if p.is_zero() {
+        return p.clone();
+    }
+    let mut new_coefficients = vec![];
+    let new_num_vars = p.num_vars() - k;
+    for (unit, term) in p.terms() {
+        let mut new_term = vec![];
+        let mut num_reduced_terms = 0;
+        for (var, power) in (*term).iter() {
+            if (p.num_vars() - var) <= k {
+                num_reduced_terms += 1;
+            } else {
+                new_term.push((*var, *power));
+            }
+        }
+        let mut new_unit = *unit;
+        for _ in 0..2_i32.pow((k - num_reduced_terms) as u32) {
+            new_unit += unit;
         }
         new_coefficients.push((new_unit, SparseTerm::new(new_term)));
     }
