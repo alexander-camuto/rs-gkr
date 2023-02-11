@@ -219,14 +219,14 @@ mod tests {
             inputs: [&first_input, &second_input],
         };
 
-        let mult_node = Node::Add {
+        let add_node_second = Node::Add {
             id: 1,
             inputs: [&first_input, &second_input],
         };
 
         let add_node_final = Node::Add {
             id: 2,
-            inputs: [&add_node, &mult_node],
+            inputs: [&add_node, &add_node_second],
         };
 
         let res = Prover::new(
@@ -234,7 +234,7 @@ mod tests {
                 &first_input,
                 &second_input,
                 &add_node,
-                &mult_node,
+                &add_node_second,
                 &add_node_final,
             ],
             vec![
@@ -244,6 +244,62 @@ mod tests {
                 },
                 InputValue {
                     id: 1,
+                    value: ScalarField::from(1),
+                },
+            ],
+        );
+        assert!(res.is_ok());
+        let prover = res.unwrap();
+
+        prover.verify()
+    }
+
+    #[test]
+    fn test_proof_validates_complex() {
+        let first_input = Node::Input { id: 0 };
+        let second_input = Node::Input { id: 1 };
+        let third_input = Node::Input { id: 1 };
+        let add_node = Node::Add {
+            id: 0,
+            inputs: [&first_input, &second_input],
+        };
+
+        let mult_node = Node::Mult {
+            id: 1,
+            inputs: [&first_input, &third_input],
+        };
+
+        let add_node_final = Node::Add {
+            id: 1,
+            inputs: [&add_node, &mult_node],
+        };
+
+        let mult_node_final = Node::Mult {
+            id: 3,
+            inputs: [&add_node, &mult_node],
+        };
+
+        let res = Prover::new(
+            vec![
+                &first_input,
+                &second_input,
+                &third_input,
+                &add_node,
+                &mult_node,
+                &add_node_final,
+                &mult_node_final,
+            ],
+            vec![
+                InputValue {
+                    id: 0,
+                    value: ScalarField::from(1),
+                },
+                InputValue {
+                    id: 1,
+                    value: ScalarField::from(2),
+                },
+                InputValue {
+                    id: 2,
                     value: ScalarField::from(1),
                 },
             ],
