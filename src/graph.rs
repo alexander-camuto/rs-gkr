@@ -1,7 +1,6 @@
 use crate::poly_utils::*;
 use ark_bn254::Fr as ScalarField;
 use ark_ff::Zero;
-use ark_poly::polynomial::multivariate::SparsePolynomial;
 use ark_poly::Polynomial;
 use std::cmp::max;
 use std::collections::HashMap;
@@ -314,8 +313,8 @@ impl<'a> Graph<'a> {
         for (index, layer_nodes) in &self.nodes {
             let k = get_k(layer_nodes.len());
             let layer = if index > &0 {
-                let mut add_ext = SparsePolynomial::zero();
-                let mut mult_ext = SparsePolynomial::zero();
+                let mut add_ext = MultiPoly::zero();
+                let mut mult_ext = MultiPoly::zero();
                 for (curr, node) in layer_nodes.iter().enumerate() {
                     if let Node::Add { inputs, .. } | Node::Mult { inputs, .. } = node {
                         // index of current node in layer as a binary string
@@ -406,7 +405,7 @@ impl<'a> Graph<'a> {
 mod tests {
     use super::*;
 
-    use ark_poly::polynomial::multivariate::{SparsePolynomial, SparseTerm, Term};
+    use ark_poly::polynomial::multivariate::{SparseTerm, Term};
     use ark_poly::DenseMVPolynomial;
 
     #[test]
@@ -569,7 +568,7 @@ mod tests {
             graph.mv_layers[0],
             MVLayer::InputLayer {
                 k: 1,
-                input_ext: SparsePolynomial::from_coefficients_vec(
+                input_ext: MultiPoly::from_coefficients_vec(
                     1,
                     vec![
                         (ScalarField::from(1), SparseTerm::new(vec![])),
@@ -584,8 +583,8 @@ mod tests {
             MVLayer::OutputLayer {
                 k: 0,
                 prev_k: 1,
-                mult: SparsePolynomial::zero(),
-                add: SparsePolynomial::from_coefficients_vec(
+                mult: MultiPoly::zero(),
+                add: MultiPoly::from_coefficients_vec(
                     3,
                     vec![
                         (ScalarField::from(1), SparseTerm::new(vec![(2, 1)])),
@@ -599,7 +598,7 @@ mod tests {
                 ),
                 w_b: shift_poly_by_k(&graph.mv_layers[0].evaluation_ext(), 1),
                 w_c: shift_poly_by_k(&graph.mv_layers[0].evaluation_ext(), 2),
-                d: SparsePolynomial::from_coefficients_vec(
+                d: MultiPoly::from_coefficients_vec(
                     1,
                     vec![
                         (ScalarField::from(-3), SparseTerm::new(vec![(0, 1)])),
@@ -641,7 +640,7 @@ mod tests {
             graph.mv_layers[0],
             MVLayer::InputLayer {
                 k: 1,
-                input_ext: SparsePolynomial::from_coefficients_vec(
+                input_ext: MultiPoly::from_coefficients_vec(
                     1,
                     vec![
                         (ScalarField::from(1), SparseTerm::new(vec![])),
@@ -656,8 +655,8 @@ mod tests {
             MVLayer::OutputLayer {
                 k: 0,
                 prev_k: 1,
-                add: SparsePolynomial::zero(),
-                mult: SparsePolynomial::from_coefficients_vec(
+                add: MultiPoly::zero(),
+                mult: MultiPoly::from_coefficients_vec(
                     3,
                     vec![
                         (ScalarField::from(1), SparseTerm::new(vec![(2, 1)])),
@@ -671,7 +670,7 @@ mod tests {
                 ),
                 w_b: shift_poly_by_k(&graph.mv_layers[0].evaluation_ext(), 1),
                 w_c: shift_poly_by_k(&graph.mv_layers[0].evaluation_ext(), 2),
-                d: SparsePolynomial::from_coefficients_vec(
+                d: MultiPoly::from_coefficients_vec(
                     1,
                     vec![
                         (ScalarField::from(-2), SparseTerm::new(vec![(0, 1)])),
@@ -716,7 +715,7 @@ mod tests {
             graph.mv_layers[0],
             MVLayer::InputLayer {
                 k: 1,
-                input_ext: SparsePolynomial::from_coefficients_vec(
+                input_ext: MultiPoly::from_coefficients_vec(
                     1,
                     vec![
                         (ScalarField::from(1), SparseTerm::new(vec![])),
@@ -731,7 +730,7 @@ mod tests {
             MVLayer::OutputLayer {
                 k: 1,
                 prev_k: 1,
-                mult: SparsePolynomial::from_coefficients_vec(
+                mult: MultiPoly::from_coefficients_vec(
                     3,
                     vec![
                         (ScalarField::from(1), SparseTerm::new(vec![(0, 1), (2, 1)])),
@@ -741,7 +740,7 @@ mod tests {
                         )
                     ],
                 ),
-                add: SparsePolynomial::from_coefficients_vec(
+                add: MultiPoly::from_coefficients_vec(
                     3,
                     vec![
                         (ScalarField::from(1), SparseTerm::new(vec![(2, 1)])),
@@ -755,7 +754,7 @@ mod tests {
                 ),
                 w_b: shift_poly_by_k(&graph.mv_layers[0].evaluation_ext(), 1),
                 w_c: shift_poly_by_k(&graph.mv_layers[0].evaluation_ext(), 2),
-                d: SparsePolynomial::from_coefficients_vec(
+                d: MultiPoly::from_coefficients_vec(
                     1,
                     vec![
                         (ScalarField::from(-1), SparseTerm::new(vec![(0, 1)])),

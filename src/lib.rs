@@ -7,3 +7,7 @@ pub mod sumcheck;
 pub mod gkr;
 
 pub mod poly_utils;
+
+pub mod fiat_shamir;
+
+pub mod mimc;

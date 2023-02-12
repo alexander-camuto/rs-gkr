@@ -1,3 +1,4 @@
+use crate::fiat_shamir::FiatShamir;
 use crate::poly_utils::n_to_vec;
 use ark_bn254::Fr as ScalarField;
 use ark_ff::Field;
@@ -13,6 +14,7 @@ pub type UniPoly = UniSparsePolynomial<ScalarField>;
 #[derive(Debug, Clone)]
 pub struct Prover {
     pub g: MultiPoly,
+    pub fs: FiatShamir,
     pub r_vec: Vec<ScalarField>,
 }
 
@@ -20,6 +22,7 @@ impl Prover {
     pub fn new(g: &MultiPoly) -> Self {
         Prover {
             g: g.clone(),
+            fs: FiatShamir::new(vec![], 2),
             r_vec: vec![],
         }
     }
@@ -100,6 +103,34 @@ impl Prover {
         true
     }
 
+    // Verify prover's claim c_1
+    pub fn verify_non_interactive(&mut self, c_1: ScalarField) -> bool {
+        self.fs.circuit_input = vec![c_1];
+        // 1st round
+        let mut gi = self.gen_uni_polynomial(None);
+        let mut expected_c = gi.evaluate(&0u32.into()) + gi.evaluate(&1u32.into());
+        assert_eq!(c_1, expected_c);
+        let lookup_degree = max_degrees(&self.g);
+        assert!(gi.degree() <= lookup_degree[0]);
+
+        // middle rounds
+        for j in 1..self.g.num_vars() {
+            let r = self.fs.get_r(gi.clone());
+            expected_c = gi.evaluate(&r);
+            gi = self.gen_uni_polynomial(Some(r));
+            let new_c = gi.evaluate(&0u32.into()) + gi.evaluate(&1u32.into());
+            assert_eq!(expected_c, new_c);
+            assert!(gi.degree() <= lookup_degree[j]);
+        }
+        // final round
+        let r = self.fs.get_r(gi.clone());
+        expected_c = gi.evaluate(&r);
+        self.r_vec.push(r);
+        let new_c = self.g.evaluate(&self.r_vec);
+        assert_eq!(expected_c, new_c);
+        true
+    }
+
     // Verifier procedures
     pub fn get_r(&self) -> Option<ScalarField> {
         let mut rng = rand::thread_rng();
@@ -158,6 +189,33 @@ mod tests {
     }
 
     #[test]
+    pub fn test_can_verify_non_interactive() {
+        let poly = MultiPoly::from_coefficients_vec(
+            1,
+            vec![(ScalarField::from(2), SparseTerm::new(vec![(0, 3)]))],
+        );
+        let sum = ScalarField::from(2);
+
+        let mut prover = Prover::new(&poly);
+
+        prover.verify(sum);
+
+        let poly = MultiPoly::from_coefficients_vec(
+            3,
+            vec![
+                (ScalarField::from(2), SparseTerm::new(vec![(0, 1), (1, 1)])),
+                (ScalarField::from(5), SparseTerm::new(vec![(2, 1)])),
+                (ScalarField::from(1), SparseTerm::new(vec![])),
+            ],
+        );
+        let sum = ScalarField::from(32);
+
+        let mut prover = Prover::new(&poly);
+
+        prover.verify_non_interactive(sum);
+    }
+
+    #[test]
     #[should_panic]
     pub fn test_fails() {
         let poly = MultiPoly::from_coefficients_vec(
@@ -183,5 +241,33 @@ mod tests {
         let mut prover = Prover::new(&poly);
 
         prover.verify(sum);
+    }
+
+    #[test]
+    #[should_panic]
+    pub fn test_fails_non_interactive() {
+        let poly = MultiPoly::from_coefficients_vec(
+            1,
+            vec![(ScalarField::from(2), SparseTerm::new(vec![(0, 3)]))],
+        );
+        let sum = ScalarField::from(2);
+
+        let mut prover = Prover::new(&poly);
+
+        prover.verify(sum);
+
+        let poly = MultiPoly::from_coefficients_vec(
+            3,
+            vec![
+                (ScalarField::from(2), SparseTerm::new(vec![(0, 1), (1, 1)])),
+                (ScalarField::from(5), SparseTerm::new(vec![(2, 1)])),
+                (ScalarField::from(1), SparseTerm::new(vec![])),
+            ],
+        );
+        let sum = ScalarField::from(36);
+
+        let mut prover = Prover::new(&poly);
+
+        prover.verify_non_interactive(sum);
     }
 }
